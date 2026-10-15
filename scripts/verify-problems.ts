@@ -41,6 +41,7 @@ function correctInput(a: Ans): Inp {
       if (a.n < a.d) return { n: a.n, d: a.d };
       return { w: Math.floor(a.n / a.d), n: a.n % a.d, d: a.d };
     case 'order': return { seq: [...a.correct] };
+    case 'build': return { expr: [...a.accept[0]!] };
     default: return { i: a.correct };
   }
 }
@@ -51,6 +52,58 @@ const rAdd = (a: R, b: R): R => norm(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
 const rSub = (a: R, b: R): R => norm(a[0] * b[1] - b[0] * a[1], a[1] * b[1]);
 const rEq = (a: R, b: R) => a[0] * b[1] === b[0] * a[1];
 const cmpR = (a: R, b: R) => Math.sign(a[0] * b[1] - b[0] * a[1]);
+
+/** 式を組み立てる手順の検査: 正解の書き方がすべて通る／まちがいの書き方が通らず声かけが出る／カード・足場が正しい */
+const OPS = ['＋', '－', '×', '÷'];
+const BUILD = { right: 0, wrong: 0 };
+function checkBuild(where: string, p: Prob, st: Step, a: Extract<Ans, { kind: 'build' }>) {
+  const need = [...new Set(a.accept.flat().filter((t) => !OPS.includes(t)))];
+  const op = a.accept[0]![1]!;
+  const dummies = a.cards.filter((c) => !need.includes(c));
+  if (need.length !== 2) fail(where, `式に使う数が2つでない ${need.join(',')}`);
+  if (new Set(a.cards).size !== a.cards.length) fail(where, `数のカードが重複 ${a.cards.join(' / ')}`);
+  if (dummies.length < 1 || dummies.length > 3) fail(where, `ダミーのカードが1〜3枚でない (${dummies.length})`);
+  if (a.cards.length > 6) fail(where, 'カードが多すぎる');
+  for (const d of dummies) if (need.some((n) => evalText(plain(n))![0] * evalText(plain(d))![1] === evalText(plain(d))![0] * evalText(plain(n))![1])) fail(where, `ダミー ${d} が必要な数と同じ大きさ`);
+  // 正解の書き方がすべて通る（たし算は入れかえも）
+  const want = op === '＋' ? 2 : 1;
+  if (a.accept.length !== want) fail(where, `正解の書き方の数が ${want} でない`);
+  for (const acc of a.accept) {
+    BUILD.right++;
+    if (judge(a, { expr: acc }) !== 'ok') fail(where, `正解の書き方が通らない ${acc.join('')}`);
+    if (st.diagnose?.({ expr: acc })) fail(where, `正解の書き方で誤答診断が反応する ${acc.join('')}`);
+    if (acc.some((t) => !OPS.includes(t) && !a.cards.includes(t))) fail(where, '正解のカードが cards に無い');
+  }
+  // まちがいの書き方（通らない・声かけが出る）
+  const [x, y] = need as [string, string];
+  const other = op === '＋' ? '－' : '＋';
+  const wrongs: string[][] = [
+    [x, other, y], [y, other, x],                 // ＋－のとりちがえ
+    [x], [y], [x, op, x],                         // 数をぬかした
+    [x, '×', y], [x, '÷', y],                     // ×÷
+    [x, op],                                      // しきになっていない
+    ...(op === '－' ? [[y, '－', x]] : []),         // 大小（順番）のとりちがえ
+    ...dummies.flatMap((d) => [[x, op, d], [d, op, y], [x, op, y, op, d]]), // ダミーを使った
+  ];
+  for (const w of wrongs) {
+    if (a.accept.some((acc) => acc.join('') === w.join(''))) continue;
+    BUILD.wrong++;
+    if (judge(a, { expr: w }) === 'ok') fail(where, `まちがいの書き方が通ってしまう ${w.join('')}`);
+    if (!st.diagnose?.({ expr: w })) fail(where, `まちがいの書き方に声かけが出ない ${w.join('')}`);
+  }
+  // 足場（えらぶ）: 正解の式は accept[0] と同じ・まちがいは通らない
+  const sc = a.scaffold;
+  if (sc.correct < 0 || sc.correct >= sc.choices.length) fail(where, '足場の正解の番号が範囲外');
+  if (new Set(sc.choices).size !== sc.choices.length || sc.choices.length < 3) fail(where, '足場の選択肢が重複／少ない');
+  if (sc.traps.length !== sc.choices.length || sc.traps[sc.correct] !== null) fail(where, '足場の声かけの並びが合わない');
+  if (sc.choices[sc.correct]!.replace(/ /g, '') !== a.accept[0]!.join('')) fail(where, '足場の正解の式が組み立ての正解と同じでない');
+  sc.choices.forEach((c, i) => {
+    if (i !== sc.correct && judge(a, { i }) !== 'wrong') fail(where, '足場のまちがいが通る');
+    if (i !== sc.correct && !sc.traps[i]) fail(where, `足場のまちがい ${c} に声かけが無い`);
+  });
+  if (judge(a, { i: sc.correct }) !== 'ok') fail(where, '足場の正解が通らない');
+  void p;
+}
 
 function checkAns(where: string, p: Prob, st: Step) {
   const a = st.ans;
@@ -109,6 +162,7 @@ function checkAns(where: string, p: Prob, st: Step) {
       if (!(a.correct >= 1 && a.correct < parts)) fail(where, `色ぬりの数が範囲外 ${a.correct}/${parts}`);
       break;
     }
+    case 'build': checkBuild(where, p, st, a); break;
     case 'order': {
       const s = [...a.correct].sort();
       if (s.join() !== a.items.map((_, i) => i).join()) fail(where, '正しい順が items の並べかえになっていない');
@@ -378,11 +432,13 @@ function semantic(id: string, p: Prob) {
       break;
     }
     case 'wp-add': case 'wp-sub': case 'wp-rem': {
-      const eq = s0.ans as Extract<Ans, { kind: 'choice' }>;
-      const v = evalExpr(plain(eq.choices[eq.correct]!));
-      if (!v || !lastR || !rEq(v, lastR)) fail(id, `式と答えが合わない: ${plain(eq.choices[eq.correct]!)} / ${p.a}`);
+      const eq = s0.ans as Extract<Ans, { kind: 'build' }>;
+      const exprText = plain(eq.accept[0]!.join(''));
+      const v = evalExpr(exprText);
+      if (!v || !lastR || !rEq(v, lastR)) fail(id, `式と答えが合わない: ${exprText} / ${p.a}`);
+      if (s0.ans.kind !== 'build' || p.steps.length !== 2) fail(id, '式を組み立てる手順＋答えの2手順でない');
       if (v && !(v[0] > 0)) fail(id, '答えが0以下');
-      const nums = termsIn(plain(eq.choices[eq.correct]!));
+      const nums = termsIn(exprText);
       for (const t of nums) if (!p.q.includes(t)) fail(id, `式の数 ${t} が問題文に無い`);
       if (id === 'wp-add' && p.tag === 'carry') {
         const [a, b] = nums.map(fracPart) as [number, number];
@@ -397,7 +453,13 @@ function semantic(id: string, p: Prob) {
       break;
     }
     case 'wp-prog': {
-      const f = s0.ans as Extract<Ans, { kind: 'frac' }>;
+      const f = p.steps[1]!.ans as Extract<Ans, { kind: 'frac' }>;
+      const be = s0.ans as Extract<Ans, { kind: 'build' }>;
+      if (be.kind !== 'build' || p.steps.length !== 3) fail(id, '式の組み立て・終わった分・ならべる の3手順でない');
+      else {
+        const ev = evalExpr(plain(be.accept[0]!.join('')));
+        if (!ev || !rEq(ev, [f.n, f.d])) fail(id, '式の答えが終わった分と合わない');
+      }
       const m = /「のこりは (\d+)\/(\d+) だよ。」/.exec(p.q);
       if (!m || Number(m[2]) !== f.d || Number(m[1]) + f.n !== f.d) fail(id, 'のこりと終わった分が合わない');
       const o = last.ans as Extract<Ans, { kind: 'order' }>;
@@ -513,6 +575,7 @@ for (const t of ERROR_TYPES) {
 }
 
 /* ---------------- 変化の数 ---------------- */
+console.log(`\n式の組み立て: 正解の書き方 ${BUILD.right} 通りが通り、まちがいの書き方 ${BUILD.wrong} 通りが通らず声かけが出る`);
 console.log('\n項目ごとの「見た目のちがう問題」の数（目安 20以上）:');
 for (const [id, n] of [...Object.entries(varieties), ...Object.entries(ehVar)]) {
   const mark = n >= MIN_VARIETY ? '✓' : '✗';

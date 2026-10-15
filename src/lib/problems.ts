@@ -13,9 +13,10 @@
  *   eh  … エラーハンター（errorHunter.ts）
  *
  * 1問は Prob。問題文・ヒントの分数は {3|4}・{1;3|4}・{□|6} の記法で書く（frac.ts）。
- * 1つの Prob は「手順（steps）」を持ち、順番に答えさせる。答え方は9種類:
+ * 1つの Prob は「手順（steps）」を持ち、順番に答えさせる。答え方は10種類:
  *   num（数）／frac（分数・書いた形のとおり）／mixed（帯分数）／any（帯分数・仮分数・整数のどれでもよい）／
- *   choice（えらぶ）／tick（数直線をタップ）／shade（図に色をぬる）／order（カードを順にならべる）
+ *   choice（えらぶ）／tick（数直線をタップ）／shade（図に色をぬる）／order（カードを順にならべる）／
+ *   build（文章題の式を、数と ＋－ のカードで自分で組み立てる。2回まちがえたら choice を足場として出す）
  */
 import type { ScratchOp, FractionTool } from 'learning-app-kit/react';
 import { F, M, rnd, pick, shuffle, retry, plain, cmpFrac } from './frac';
@@ -59,10 +60,17 @@ export type Ans =
   /** 図の何こに色をぬるか */
   | { kind: 'shade'; correct: number }
   /** items を順にタップ。correct＝正しい順の items の番号 */
-  | { kind: 'order'; items: string[]; correct: number[] };
+  | { kind: 'order'; items: string[]; correct: number[] }
+  /**
+   * 文章題の式を、カードで組み立てる（紙のテストは式を書く。選ぶ練習は書く点に届きにくい）。
+   * cards＝数のカード（問題文の数＋ダミー。記法つき）。＋－×÷ の記号カードは画面がいつも出す。
+   * accept＝正解の式（カードを左から並べたもの。たし算の入れかえは両方）。
+   * scaffold＝2回まちがえたときに足場として出す「えらぶ」形（練習だけ。本番テスト・実力の階段では出さない。ボス戦は最初からこの形）。
+   */
+  | { kind: 'build'; cards: string[]; accept: string[][]; scaffold: { choices: string[]; correct: number; traps: (string | null)[] } };
 
 /** 子どもの入力 */
-export interface Inp { v?: number; n?: number; d?: number; w?: number; i?: number; seq?: number[] }
+export interface Inp { v?: number; n?: number; d?: number; w?: number; i?: number; seq?: number[]; expr?: string[] }
 
 export type Verdict = 'ok' | 'equiv' | 'wrong';
 
@@ -158,7 +166,25 @@ export function judge(ans: Ans, x: Inp): Verdict {
       return x.i === ans.correct ? 'ok' : 'wrong';
     case 'order':
       return x.seq != null && x.seq.length === ans.correct.length && x.seq.every((v, k) => v === ans.correct[k]) ? 'ok' : 'wrong';
+    case 'build': {
+      if (x.i != null) return x.i === ans.scaffold.correct ? 'ok' : 'wrong';
+      const j = x.expr?.join('');
+      return j != null && ans.accept.some((a) => a.join('') === j) ? 'ok' : 'wrong';
+    }
   }
+}
+
+/** ボス戦など、すばやく答える場面では、組み立てる手順を「えらぶ」形にして出す */
+export function asChoiceStep(step: Step): Step {
+  const a = step.ans;
+  if (a.kind !== 'build') return step;
+  const { choices, correct, traps } = a.scaffold;
+  return {
+    prompt: step.prompt.replace(/（.*?）/g, '').replace('を カードで つくろう', 'は どれ？'),
+    ans: { kind: 'choice', choices, correct },
+    fig: step.fig,
+    diagnose: (x) => (x.i != null && x.i !== correct ? traps[x.i] ?? null : null),
+  };
 }
 
 /** 大きさは合っているが、形がちがうときのことば（まちがいに数えない） */
@@ -239,6 +265,74 @@ function diagDen(D: number, op: '+' | '-') {
     if (op === '-' && x.d === 0) return `分母は ひかないよ。分母は 1つ分の 大きさ（${F(1, D)}）だから、そのまま。ひくのは 分子だけ。`;
     return null;
   };
+}
+
+
+/* =====================================================================
+ * 文章題の式を組み立てる（build）
+ * =================================================================== */
+
+const OP_CARDS = ['＋', '－', '×', '÷'];
+const isOpText = (t: string) => OP_CARDS.includes(t);
+
+interface ExprSpec {
+  /** 式に使う数のカード（記法つき。どれも1回ずつ） */
+  need: string[];
+  /** ダミーの数のカード */
+  dummies: string[];
+  op: '＋' | '－';
+  /** その場面で正しい演算を取りちがえたときのことば／順番を取りちがえたときのことば */
+  opWhy: string;
+  orderWhy: string;
+}
+
+/** 式の組み立てに対する誤答診断（典型: ＋－のとりちがえ・大小（順番）のとりちがえ・数のぬけ・ダミーの使用） */
+function exprDiag(spec: ExprSpec, scaffoldTraps: (string | null)[]) {
+  return (x: Inp): string | null => {
+    if (x.i != null) return scaffoldTraps[x.i] ?? null;
+    const toks = x.expr;
+    if (!toks || toks.length === 0) return null;
+    const nums = toks.filter((t) => !isOpText(t));
+    const ops = toks.filter(isOpText);
+    const alternating = toks.every((t, k) => (k % 2 === 0 ? !isOpText(t) : isOpText(t))) && toks.length % 2 === 1;
+    if (!alternating) return 'しきに なっていないよ。「数 ＋ 数」や「数 － 数」の ように、数と 記号を かわりばんこに ならべよう。';
+    if (nums.some((n) => spec.dummies.includes(n))) return '問題文に 出てこない 数が まざっているよ。問題文の 数だけで しきを つくろう。';
+    if (ops.some((o) => o === '×' || o === '÷')) return 'この 問題は ×や ÷ では ないよ。ふえる（あわせる）なら ＋、へる（ちがい・のこり）なら － で 考えよう。';
+    if (nums.length < spec.need.length || !spec.need.every((n) => nums.includes(n))) return '使っていない 数が あるよ。問題文に 出てくる 数を ぜんぶ 使って しきを つくろう。';
+    if (nums.length > spec.need.length) return '数が おおすぎるよ。問題文の 数を 1回ずつ 使おう。';
+    if (ops[0] !== spec.op) return spec.opWhy;
+    return spec.orderWhy;
+  };
+}
+
+/**
+ * 式を組み立てる手順。たし算は順番の入れかえも正解、ひき算は正しい順だけ。
+ * correct＝正解の式（記法つき。足場の「えらぶ」の正解）、wrongs＝足場のまちがいの式。
+ */
+function exprStep(prompt: string, spec: ExprSpec, correct: string, wrongs: string[], traps: Record<string, string> = {}): Step {
+  const all = shuffle([correct, ...wrongs]);
+  const idx = all.indexOf(correct);
+  const trapList = all.map((c, i) => (i === idx ? null : traps[c] ?? null));
+  const [a, b] = spec.need;
+  const accept: string[][] = spec.op === '＋' ? [[a!, '＋', b!], [b!, '＋', a!]] : [[a!, '－', b!]];
+  const ans: Ans = {
+    kind: 'build',
+    cards: shuffle([...spec.need, ...spec.dummies]),
+    accept,
+    scaffold: { choices: all, correct: idx, traps: trapList },
+  };
+  return { prompt, ans, diagnose: guard(ans, exprDiag(spec, trapList)) };
+}
+
+/** 数のカードの ダミー（問題文に出てこない数）。必要な数と見た目がかぶらないものを count 個 */
+function dummyTerms(D: number, avoid: string[], count: number): string[] {
+  const out: string[] = [];
+  for (let k = 0; k < 400 && out.length < count; k++) {
+    const t: Term = Math.random() < 0.5 ? { w: 0, n: rnd(1, D - 1) } : { w: rnd(1, 4), n: rnd(1, D - 1) };
+    const c = tr(t, D);
+    if (!avoid.includes(c) && !out.includes(c)) out.push(c);
+  }
+  return out;
 }
 
 /* =====================================================================
@@ -1184,10 +1278,14 @@ function genWpAdd(): Prob {
     skillId: 'wp-add', tag: carry ? 'carry' : 'plain',
     text,
     steps: [
-      choiceStep('式は どれ？', right, [`${big[0]} － ${big[1]}`, `${big[1]} － ${big[0]}`], {
-        [`${big[0]} － ${big[1]}`]: '「あわせて」「入れると」「全体」は たし算だよ。',
-        [`${big[1]} － ${big[0]}`]: '「あわせて」「入れると」「全体」は たし算だよ。',
-      }),
+      exprStep('しきを カードで つくろう（数と ＋ － の カードを タップ）',
+        { need: [A, B], dummies: dummyTerms(D, [A, B], 2), op: '＋',
+          opWhy: '「あわせて」「入れると」「全体」は たし算だよ。＋と － を とりちがえて いないかな？',
+          orderWhy: '数と 記号の ならびを もう一度 見なおそう。' },
+        right, [`${big[0]} － ${big[1]}`, `${big[1]} － ${big[0]}`], {
+          [`${big[0]} － ${big[1]}`]: '「あわせて」「入れると」「全体」は たし算だよ。',
+          [`${big[1]} － ${big[0]}`]: '「あわせて」「入れると」「全体」は たし算だよ。',
+        }),
       mk(`${s.ask}は 何${s.u}？${ANY_NOTE}`, anyAns(N, D, 'mixed'), (x) => diagDen(D, '+')(x)
         ?? (carry && x.w === a.w + b.w && x.n === a.n + b.n - D ? '分数の ところが 1より 大きく なったら、1を 整数に くり上げよう。' : null)),
     ],
@@ -1233,10 +1331,14 @@ function genWpSub(): Prob {
     skillId: 'wp-sub', tag: borrow ? 'borrow' : 'plain',
     text,
     steps: [
-      choiceStep('式は どれ？', right, [`${L} － ${H}`, `${H} ＋ ${L}`], {
-        [`${L} － ${H}`]: '「ちがい」は、大きい ほうから 小さい ほうを ひくよ。',
-        [`${H} ＋ ${L}`]: '「ちがい」は ひき算で もとめるよ。',
-      }),
+      exprStep('しきを カードで つくろう（数と ＋ － の カードを タップ）',
+        { need: [H, L], dummies: dummyTerms(D, [H, L], 2), op: '－',
+          opWhy: '「ちがい」は ひき算で もとめるよ。＋と － を とりちがえて いないかな？',
+          orderWhy: '「ちがい」は、大きい ほうから 小さい ほうを ひくよ。ひかれる数と ひく数が 逆に なって いないかな？' },
+        right, [`${L} － ${H}`, `${H} ＋ ${L}`], {
+          [`${L} － ${H}`]: '「ちがい」は、大きい ほうから 小さい ほうを ひくよ。',
+          [`${H} ＋ ${L}`]: '「ちがい」は ひき算で もとめるよ。',
+        }),
       mk(`ちがいは 何${s.u}？${ANY_NOTE}`, anyAns(N, D, N > D ? 'mixed' : 'frac'), (x) => diagDen(D, '-')(x)
         ?? (borrow && x.w === hi.w - lo.w && x.n === lo.n - hi.n ? 'ひけない ときに、大きい ほうから 小さい ほうを ひいて いないかな？ 整数から 1 くり下げよう。' : null)),
     ],
@@ -1279,10 +1381,14 @@ function genWpRem(): Prob {
     skillId: 'wp-rem', tag: whole ? 'whole' : 'mixed',
     text,
     steps: [
-      choiceStep('式は どれ？', right, [`${A} ＋ ${B}`, `${B} － ${A}`], {
-        [`${A} ＋ ${B}`]: '「のこり」は ひき算だよ。',
-        [`${B} － ${A}`]: 'はじめの 量から 使った 量を ひくよ。',
-      }),
+      exprStep('しきを カードで つくろう（数と ＋ － の カードを タップ）',
+        { need: [A, B], dummies: dummyTerms(D, [A, B], 2), op: '－',
+          opWhy: '「のこり」は ひき算だよ。＋と － を とりちがえて いないかな？',
+          orderWhy: 'はじめの 量から 使った 量を ひくよ。ひかれる数と ひく数が 逆に なって いないかな？' },
+        right, [`${A} ＋ ${B}`, `${B} － ${A}`], {
+          [`${A} ＋ ${B}`]: '「のこり」は ひき算だよ。',
+          [`${B} － ${A}`]: 'はじめの 量から 使った 量を ひくよ。',
+        }),
       mk(`のこりは 何${s.u}？${ANY_NOTE}`, anyAns(N, D, N > D ? 'mixed' : 'frac'), (x) => diagDen(D, '-')(x)
         ?? (whole && b.n > 0 && x.w === a.w - 1 - b.w && x.n === b.n && b.n * 2 !== D ? `整数を 分数に なおさずに ${F(b.n, D)} を そのまま かいて いないかな？ 1 ＝ ${F(D, D)} と して ひこう。` : null)),
     ],
@@ -1332,6 +1438,14 @@ function genWpProg(): Prob {
     skillId: 'wp-prog', tag: unit ? 'unit' : 'same',
     text,
     steps: [
+      exprStep('終わった ぶんを もとめる しきを カードで つくろう（数と ＋ － の カードを タップ）',
+        { need: ['1', F(remN, rem.done[1])], dummies: dummyTerms(rem.done[1], ['1', F(remN, rem.done[1])], 2).filter((c) => c !== '1'), op: '－',
+          opWhy: 'ぜんたいの 1 から のこりを ひいて、終わった ぶんを もとめるよ。＋と － を とりちがえて いないかな？',
+          orderWhy: 'ぜんたい（1）から のこりを ひくよ。ひかれる数と ひく数が 逆に なって いないかな？' },
+        `1 － ${F(remN, rem.done[1])}`, [`${F(remN, rem.done[1])} － 1`, `1 ＋ ${F(remN, rem.done[1])}`], {
+          [`${F(remN, rem.done[1])} － 1`]: 'ぜんたい（1）から のこりを ひくよ。',
+          [`1 ＋ ${F(remN, rem.done[1])}`]: '終わった ぶんは、ぜんたいから のこりを ひいて もとめるよ。',
+        }),
       mk(`${names[remIdx]}さんは「のこりは ${F(remN, rem.done[1])}」。終わったのは ぜんたいの どれだけ？`, { kind: 'frac', n: rem.done[0], d: rem.done[1] }, (x) => (
         x.n === remN && x.d === rem.done[1] ? 'それは のこりの ぶんだよ。ぜんたいの 1 から のこりを ひこう。' : null
       )),

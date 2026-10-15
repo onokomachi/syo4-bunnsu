@@ -1,7 +1,7 @@
 /**
  * 1問の進行（全モジュール共通）。問題（Prob）の手順（steps）を順番に答えさせる。
  *
- * 答え方は手順ごとに8種類: 数・分数・帯分数・帯分数でも仮分数でもよい（FracEntry）／えらぶ／数直線をタップ／
+ * 答え方は手順ごとに9種類（＋文章題の式を組み立てる build）: 数・分数・帯分数・帯分数でも仮分数でもよい（FracEntry）／えらぶ／数直線をタップ／
  * 図に色をぬる／カードを順にならべる（OrderInput）。
  * まちがえたときは「どこがちがうか」（誤答診断）と、段階的なヒント（3段・1回目から答えを見せない）を出す。
  *   ok         … 次の手順へ（最後なら おしまい）
@@ -16,8 +16,9 @@ import { ProbScratch } from '../shared/ProbScratch';
 import { HintBox, ResultPanel } from '../ui/primitives';
 import { FigureView } from '../shared/FigureView';
 import { FracEntry } from '../shared/FracEntry';
+import { ExprBuilder } from '../shared/ExprBuilder';
 import { RichText } from '../shared/Frac';
-import { generate, judge, equivMessage, showVal, type Ans, type Inp, type Prob, type Step } from '../../lib/problems';
+import { generate, judge, equivMessage, showVal, asChoiceStep, type Ans, type Inp, type Prob, type Step } from '../../lib/problems';
 import { F, M, dec } from '../../lib/frac';
 import { skillToModuleId, useProgressStore } from '../../store/progressStore';
 import { playClear, playCorrect, playSoftTry } from '../../lib/sound';
@@ -31,6 +32,7 @@ export function ansLine(a: Ans): string {
     case 'any': return a.n > a.d ? `${showVal(a.n, a.d)}（${F(a.n, a.d)}）` : showVal(a.n, a.d);
     case 'choice': return a.choices[a.correct]!;
     case 'order': return a.correct.map((i) => a.items[i]!).join(' → ');
+    case 'build': return a.accept[0]!.join(' ');
     default: return '';
   }
 }
@@ -132,12 +134,24 @@ interface Props {
   /** まちがえたとき。テストモードで「2回で×」を数えるのに使う */
   onMiss?: () => void;
   nextLabel?: string;
+  /**
+   * 文章題の式（build）の出し方。
+   *   practice … 組み立てる。2回まちがえたら「えらぶ」を足場として出す（その項目に習熟していれば出さない）。既定
+   *   only     … 組み立てるだけ（本番テスト・実力の階段。足場なし）
+   *   choice   … 「えらぶ」だけ（ボス戦。すばやく答える場面）
+   */
+  buildMode?: 'practice' | 'only' | 'choice';
 }
 
-export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onResult, onMiss, nextLabel }) => {
+/** この項目の熟達バーが これ以上なら、足場（えらぶ）を出さない（3回連続ノーミス以上） */
+const SCAFFOLD_OFF_AT = 0.6;
+
+export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onResult, onMiss, nextLabel, buildMode = 'practice' }) => {
   const [prob] = useState<Prob>(() => problem ?? generate(skillId!));
   const [si, setSi] = useState(0);
   const [mistakes, setMistakes] = useState(0);
+  /** いまの手順でまちがえた回数（足場を出すか決める） */
+  const [stepMiss, setStepMiss] = useState(0);
   const [msg, setMsg] = useState<{ tone: 'hint' | 'wrong'; text: string } | null>(null);
   const [wrongChoices, setWrongChoices] = useState<ReadonlySet<number>>(new Set());
   const [cells, setCells] = useState<ReadonlySet<number>>(new Set());
@@ -145,10 +159,14 @@ export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onRes
   const [lines, setLines] = useState<string[]>([]);
   const [done, setDone] = useState(false);
   const recordResult = useProgressStore((s) => s.recordResult);
+  // 熟達した項目では足場を出さない（開いたときの値で決める。解いている最中に変えない）
+  const [mastered] = useState(() => useProgressStore.getState().getMasteryStreak((problem ?? { skillId: skillId! }).skillId) >= SCAFFOLD_OFF_AT);
   // できなかった問題も残す。まちがえた回数を数え、正解までたどりつかずに離れたときも1件記録する
   const rec = useRoundRecorder({ moduleId: skillToModuleId(prob.skillId) ?? 'hyo', skillId: prob.skillId, record: recordResult });
 
-  const step = prob.steps[Math.min(si, prob.steps.length - 1)]!;
+  const rawStep = prob.steps[Math.min(si, prob.steps.length - 1)]!;
+  const step = buildMode === 'choice' ? asChoiceStep(rawStep) : rawStep;
+  const showScaffold = step.ans.kind === 'build' && buildMode === 'practice' && !mastered && stepMiss >= 2;
   const interactive = step.ans.kind === 'tick' || step.ans.kind === 'shade';
   const fig = step.fig ?? prob.fig;
   const showFig = !!fig && (interactive || !prob.figOnHint || mistakes >= 2 || done);
@@ -169,6 +187,7 @@ export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onRes
       setWrongChoices(new Set());
       setCells(new Set());
       setTick(null);
+      setStepMiss(0);
       const line = ansLine(step.ans);
       if (si >= prob.steps.length - 1) {
         if (line) setLines((l) => [...l, line]);
@@ -189,9 +208,10 @@ export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onRes
     playSoftTry();
     const n = mistakes + 1;
     setMistakes(n);
+    setStepMiss((m) => m + 1);
     rec.mistake();
     onMiss?.();
-    if (inp.i != null && step.ans.kind === 'choice') setWrongChoices((s) => new Set(s).add(inp.i!));
+    if (inp.i != null && (step.ans.kind === 'choice' || step.ans.kind === 'build')) setWrongChoices((s) => new Set(s).add(inp.i!));
     if (step.ans.kind === 'tick') setTick(null);
     const diag = step.diagnose?.(inp);
     const hint = prob.hints[Math.min(n - 1, prob.hints.length - 1)] ?? '';
@@ -265,7 +285,18 @@ export const FractionRound: React.FC<Props> = ({ skillId, problem, onNext, onRes
                 これで いい
               </button>
             )}
-            {!interactive && <StepInput key={si} step={step} wrongChoices={wrongChoices} onSubmit={submit} />}
+            {step.ans.kind === 'build' && (
+              <>
+                <ExprBuilder key={si} cards={step.ans.cards} onSubmit={(expr) => submit({ expr })} />
+                {showScaffold && (
+                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-4 space-y-3" data-testid="scaffold">
+                    <p className="text-center text-sm font-black text-amber-800">むずかしい ときは、しきを えらんでも いいよ</p>
+                    <StepInput step={asChoiceStep(step)} wrongChoices={wrongChoices} onSubmit={submit} />
+                  </div>
+                )}
+              </>
+            )}
+            {!interactive && step.ans.kind !== 'build' && <StepInput key={si} step={step} wrongChoices={wrongChoices} onSubmit={submit} />}
           </>
         )}
 

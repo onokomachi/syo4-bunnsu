@@ -17,6 +17,9 @@
   `bunsuu4`・`apps` の1行・Vercel の環境変数が要る（portal-connect スキル）。項目を足したり名前を変えたら
   `npm run catalog > ../learning-app-kit/src/catalog/bunsuu4.ts` で作り直して kit に入れる（誤概念は `scripts/export-catalog.ts` に手で書く）。
 - けいさんらん（分数）は kit の `FractionPad`。4年は convert（仮分数・帯分数）と borrow（くり下げ）だけ。出す画面は `problems.ts` の `PADS`・`errorHunter.ts` の `EH_PADS`、理由は `docs/DESIGN.md` §6。
+- **文章題の式は、カードで組み立てる**（`Ans.kind='build'`、部品は `ExprBuilder.tsx`、作り方は `problems.ts` の `exprStep`）。
+  練習は組み立てが基本で、同じ手順で2回まちがえたら「えらぶ」を足場に出す（熟達した項目では出さない）。本番テスト・実力の階段は組み立てだけ（`FractionRound` の `buildMode`）。ボス戦は「えらぶ」のまま。
+  たし算は順番の入れかえも正解。`npm run verify` が、正解の書き方がすべて通ること・まちがいの書き方が通らず声かけが出ることを数える。
 - 設計と網羅性の対応表は `docs/DESIGN.md`。
 
 ## 確かめ方

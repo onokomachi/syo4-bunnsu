@@ -73,5 +73,5 @@ interface ExtraProps {
 export const ExtraRound: React.FC<ExtraProps> = ({ skillId, onResult, onMiss }) => {
   const common = { onNext: () => {}, onResult, onMiss, nextLabel: 'つぎへ' };
   if (skillId.startsWith('eh-')) return <ErrorRound {...common} skillId={skillId} />;
-  return <FractionRound {...common} skillId={skillId} />;
+  return <FractionRound {...common} skillId={skillId} buildMode="only" />;
 };
