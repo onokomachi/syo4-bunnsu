@@ -1,0 +1,272 @@
+/**
+ * モジュール横断の学習進捗。スキル別の習熟度（正答率）を保持し、
+ * 適応難易度（BKT の簡易版）や「がくしゅうのきろく」に使う。
+ * 保存先は progressRepository 経由で差し替え可能。
+ */
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { getProgressStorage } from '../services/progressRepository';
+import { scheduleAfterResult, type ReviewState } from 'learning-app-kit/review';
+
+export type ModuleId =
+  | 'hyo'
+  | 'hen'
+  | 'eq'
+  | 'cmp'
+  | 'add'
+  | 'sub'
+  | 'word-problem'
+  | 'error-hunter'
+  | 'mock-test'
+  | 'boss-battle';
+
+/** 本番テストの各設問の結果（学習のきろくで詳細表示するため） */
+export interface TestStepResult {
+  daimon: number;
+  sub?: string;
+  title: string;
+  section: '表' | '裏' | '参考';
+  q: string; // 問題
+  a: string; // 正しい答え
+  points: number;
+  earned: number;
+  correct: boolean; // 一発正解できたか
+  /**
+   * 項目の記号。カタログと同じ文字列にする。
+   * これが無いと、先生の画面で「どの種類の問題が学級全体で弱いか」を出せない
+   * （大問の題名は問題が変わるたびに変わりうるので、集計の軸にできない）。
+   */
+  skillId?: string;
+  /** 何回まちがえたか。2回で×にして次へ進めた問題は 2 になる */
+  misses?: number;
+  /** 「わからない」で次へ進めたか */
+  gaveUp?: boolean;
+}
+
+export interface TestDetail {
+  mode: '表' | '裏' | 'ぜんぶ';
+  omoteScore: number;
+  omoteMax: number;
+  uraScore: number;
+  uraMax: number;
+  total: number;
+  totalMax: number;
+  steps: TestStepResult[];
+}
+
+export interface ResultRecord {
+  id: string;
+  ts: number;
+  moduleId: ModuleId;
+  skillId: string; // 例: 'hyo-tape', 'add-carry', 'wp-add'
+  label: string; // 履歴表示用（例: "2と5/8＋4/8"）
+  correct: boolean; // ノーミスで完答できたか
+  detail?: TestDetail; // 本番テストのときだけ。各設問の問題・正答・○×
+  /** その問題で何回まちがえたか。0なら一発正解 */
+  mistakes?: number;
+  /**
+   * 正解までたどりつかずに離れたか。
+   * これを残さないと「できなかった問題」ほど記録から消える。
+   * 分析のためだけの印で、熟達度や復習の予定は動かさない。
+   */
+  abandoned?: boolean;
+}
+
+export interface SkillMastery {
+  attempts: number;
+  corrects: number;
+  perfectStreak?: number; // 連続ノーミス数（熟達バー表示用。ミスで0にリセット）
+}
+
+/** skillId のプレフィックスから所属モジュールを判定 */
+export function skillToModuleId(skillId: string): ModuleId | null {
+  if (skillId === 'mock-test' || skillId.startsWith('mock-')) return 'mock-test';
+  if (skillId.startsWith('boss-')) return 'boss-battle';
+  if (skillId.startsWith('hyo-')) return 'hyo';
+  if (skillId.startsWith('hen-')) return 'hen';
+  if (skillId.startsWith('eq-')) return 'eq';
+  if (skillId.startsWith('cmp-')) return 'cmp';
+  if (skillId.startsWith('add-')) return 'add';
+  if (skillId.startsWith('sub-')) return 'sub';
+  if (skillId.startsWith('wp-')) return 'word-problem';
+  if (skillId.startsWith('eh-')) return 'error-hunter';
+  return null;
+}
+
+interface ProgressState {
+  logs: ResultRecord[];
+  mastery: Record<string, SkillMastery>;
+  /**
+   * 間隔反復のスケジュール（learning-app-kit/review）。skillId → { box, lastTs, nextDueTs }。
+   * 正解するたびに次の復習までの間隔が 1→3→7→14→30 日と伸び、ミスで最初に戻る。
+   * ホームの「きょうの ふくしゅう」がここを見る。
+   */
+  review: Record<string, ReviewState>;
+  currentStreak: number;
+  maxStreak: number;
+  dailyGoal: number;
+  // 累計カウンタ（logs は直近200件で打ち切るため、総数はこちらで保持して頭打ちを防ぐ）
+  totalCorrect: number;
+  moduleCounts: Partial<Record<ModuleId, number>>;
+  // 本番テストの自己ベスト得点（バッジ判定用。表/裏/両面それぞれの最高点）
+  bestTestOmote: number;
+  bestTestUra: number;
+  bestTestTotal: number;
+  // 満点をとった回数（バッジの上位ティア判定用。表/裏/両面それぞれ）
+  testPerfectCounts: { omote: number; ura: number; total: number };
+  // 習熟度MAX（あるスキルで5問連続ノーミス＝熟達バー満タン）を一度でも達成したモジュール。
+  masteredModules: Partial<Record<ModuleId, boolean>>;
+  // 隠しコマンドで解放した「全バッジ獲得あつかい」フラグ（見た目の確認用。実際の記録は書き換えない）
+  debugAllBadges: boolean;
+  recordResult: (rec: Omit<ResultRecord, 'id' | 'ts'>) => void;
+  getMastery: (skillId: string) => number; // 0..1（試行なしは 0）
+  getMasteryStreak: (skillId: string) => number; // 0..1（連続ノーミス/5。熟達バー表示用）
+  getModuleCount: (moduleId: ModuleId) => number;
+  getTodayCount: () => number; // きょう 正解した数
+  getTodaySkillCount: (skillId: string) => number; // きょう そのスキルを 正解した数
+  setDailyGoal: (n: number) => void;
+  setDebugAllBadges: (v: boolean) => void;
+  reset: () => void;
+}
+
+export const useProgressStore = create<ProgressState>()(
+  persist(
+    (set, get) => ({
+      logs: [],
+      mastery: {},
+      review: {},
+      currentStreak: 0,
+      maxStreak: 0,
+      dailyGoal: 10,
+      totalCorrect: 0,
+      moduleCounts: {},
+      bestTestOmote: 0,
+      bestTestUra: 0,
+      bestTestTotal: 0,
+      testPerfectCounts: { omote: 0, ura: 0, total: 0 },
+      masteredModules: {},
+      debugAllBadges: false,
+
+      recordResult: (rec) => {
+        set((state) => {
+          const entry: ResultRecord = {
+            ...rec,
+            id: crypto.randomUUID(),
+            ts: Date.now(),
+          };
+          const logs = [entry, ...state.logs].slice(0, 200);
+
+          // とちゅうでやめた記録は、分析のために残すだけにする。
+          // 熟達度・連続記録・復習の予定は動かさない——開いて少しやってやめたことで
+          // 子どもの側が損をするのは、ミスを罰しない方針に反するため。
+          if (rec.abandoned) return { logs };
+
+          const prev = state.mastery[rec.skillId] ?? { attempts: 0, corrects: 0, perfectStreak: 0 };
+          const newPerfectStreak = rec.correct ? Math.min((prev.perfectStreak ?? 0) + 1, 5) : 0;
+          const mastery = {
+            ...state.mastery,
+            [rec.skillId]: {
+              attempts: prev.attempts + 1,
+              corrects: prev.corrects + (rec.correct ? 1 : 0),
+              // 連続ノーミス：正解で +1（最大5）、ミスありの完答で 0 にリセット
+              perfectStreak: newPerfectStreak,
+            },
+          };
+
+          // 熟達バーが満タン（5連続ノーミス）に達したら、そのモジュールを「習熟度MAX」として永続記録
+          const masteredModules = newPerfectStreak >= 5 && !state.masteredModules[rec.moduleId]
+            ? { ...state.masteredModules, [rec.moduleId]: true }
+            : state.masteredModules;
+
+          // 間隔反復のスケジュール更新。本番テスト・ボス戦は「復習で戻る先」にならないので対象外
+          const review =
+            rec.moduleId === 'mock-test' || rec.moduleId === 'boss-battle'
+              ? state.review
+              : { ...state.review, [rec.skillId]: scheduleAfterResult(state.review[rec.skillId], rec.correct) };
+
+          const currentStreak = rec.correct ? state.currentStreak + 1 : 0;
+          const maxStreak = Math.max(state.maxStreak, currentStreak);
+
+          // 累計カウンタ（頭打ち防止。logs のキャップに依存しない）
+          const totalCorrect = state.totalCorrect + (rec.correct ? 1 : 0);
+          const moduleCounts = rec.correct
+            ? { ...state.moduleCounts, [rec.moduleId]: (state.moduleCounts[rec.moduleId] ?? 0) + 1 }
+            : state.moduleCounts;
+
+          // 本番テストの自己ベスト得点を更新（その範囲に含まれたセクションのみ）
+          let bestTestOmote = state.bestTestOmote;
+          let bestTestUra = state.bestTestUra;
+          let bestTestTotal = state.bestTestTotal;
+          const testPerfectCounts = { ...state.testPerfectCounts };
+          if (rec.detail) {
+            if (rec.detail.omoteMax > 0) {
+              bestTestOmote = Math.max(bestTestOmote, rec.detail.omoteScore);
+              // 満点をとった回数（上位ティアのバッジ判定用。難易度の高い「くり返し満点」を評価する）
+              if (rec.detail.omoteScore === rec.detail.omoteMax) testPerfectCounts.omote += 1;
+            }
+            if (rec.detail.uraMax > 0) {
+              bestTestUra = Math.max(bestTestUra, rec.detail.uraScore);
+              if (rec.detail.uraScore === rec.detail.uraMax) testPerfectCounts.ura += 1;
+            }
+            // 両面（ぜんぶ）= 表と裏の両方を解いたときだけ合計のベストを更新
+            if (rec.detail.omoteMax > 0 && rec.detail.uraMax > 0) {
+              bestTestTotal = Math.max(bestTestTotal, rec.detail.total);
+              if (rec.detail.total === rec.detail.totalMax) testPerfectCounts.total += 1;
+            }
+          }
+
+          return { logs, mastery, review, currentStreak, maxStreak, totalCorrect, moduleCounts, bestTestOmote, bestTestUra, bestTestTotal, testPerfectCounts, masteredModules };
+        });
+      },
+
+      getMastery: (skillId) => {
+        const m = get().mastery[skillId];
+        if (!m || m.attempts === 0) return 0;
+        return m.corrects / m.attempts;
+      },
+
+      getMasteryStreak: (skillId) => {
+        const m = get().mastery[skillId];
+        return Math.min((m?.perfectStreak ?? 0) / 5, 1);
+      },
+
+      getModuleCount: (moduleId) => get().moduleCounts[moduleId] ?? 0,
+
+      getTodayCount: () => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const t = start.getTime();
+        return get().logs.filter((l) => l.ts >= t && l.correct).length;
+      },
+
+      getTodaySkillCount: (skillId) => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const t = start.getTime();
+        return get().logs.filter((l) => l.ts >= t && l.correct && l.skillId === skillId).length;
+      },
+
+      setDailyGoal: (n) => set({ dailyGoal: n }),
+      setDebugAllBadges: (v) => set({ debugAllBadges: v }),
+
+      reset: () => set({
+        logs: [], mastery: {}, review: {}, currentStreak: 0, maxStreak: 0, totalCorrect: 0, moduleCounts: {},
+        bestTestOmote: 0, bestTestUra: 0, bestTestTotal: 0, testPerfectCounts: { omote: 0, ura: 0, total: 0 }, masteredModules: {},
+        debugAllBadges: false,
+      }),
+    }),
+    {
+      name: 'bunsuu4_progress_v1',
+      version: 1,
+      storage: createJSONStorage(() => getProgressStorage()),
+      // 単元アプリごとに保存キーが別なので、他の単元の記録は引きつがない。
+      // 将来 version を上げるときの穴うめだけ書いておく（満点回数カウンタ・復習予定が無い古い形）
+      migrate: (persisted) => {
+        const state = persisted as Partial<ProgressState> | undefined;
+        if (state && !state.testPerfectCounts) state.testPerfectCounts = { omote: 0, ura: 0, total: 0 };
+        if (state && !state.review) state.review = {};
+        return state as ProgressState;
+      },
+    }
+  )
+);
