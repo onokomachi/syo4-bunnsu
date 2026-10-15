@@ -375,7 +375,7 @@ export const BossBattleModule: React.FC<Props> = ({ onExit }) => {
   const renderAnswer = (tp: TestProblem) => {
     const common = { onNext: () => {}, nextLabel: 'つぎへ', onResult: () => handleCorrect() };
     return tp.kind === 'frac'
-      ? <FractionRound {...common} problem={tp.p} />
+      ? <FractionRound {...common} problem={tp.p} buildMode="choice" />
       : <ErrorRound {...common} example={tp.p} />;
   };
 

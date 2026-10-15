@@ -338,7 +338,8 @@ export const TestActivity: React.FC<{
   nextLabel?: string;
 }> = ({ tp, onNext, onResult, onMiss, nextLabel = 'つぎの もんだいへ' }) => {
   const common = { onNext, onResult, onMiss, nextLabel };
+  // 本番テスト・実力の階段は、式を組み立てるだけ（足場の「えらぶ」は出さない）
   return tp.kind === 'frac'
-    ? <FractionRound {...common} problem={tp.p} />
+    ? <FractionRound {...common} problem={tp.p} buildMode="only" />
     : <ErrorRound {...common} example={tp.p} />;
 };

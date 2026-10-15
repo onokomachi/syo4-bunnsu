@@ -4,7 +4,7 @@
  * 大問・小問・配点・問い方をそのまま写した（docs/DESIGN.md §5）。数値は毎回ランダムに作る。
  *
  * 採点: ノーミス完答＝満点、ミスありで完答＝0点（＝一発正解を採点）。
- * 大問7・8は紙では「式10点・答え10点」。アプリは式（えらぶ）→答え の2手順を一発で通したら20点（紙との差。DESIGN.md §5）。
+ * 大問7・8は紙では「式10点・答え10点」。アプリは式（カードで組み立てる）→答え の2手順を一発で通したら20点（紙との差。DESIGN.md §5）。
  */
 import { generate, generateTagged, type Prob } from './problems';
 import { generateError, describeError, type ErrProb } from './errorHunter';
