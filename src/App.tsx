@@ -19,8 +19,8 @@ import { useSettingsStore } from './store/settingsStore';
 import { MatrixRain } from './components/ui/MatrixRain';
 import { AuroraRain } from './components/ui/AuroraRain';
 import { SakuraRain } from './components/ui/SakuraRain';
-import { InfernoRain } from './components/ui/InfernoRain';
-import { TenkuuRain } from './components/ui/TenkuuRain';
+import { SpeedWorldBackground } from './components/ui/SpeedWorldBackground';
+import { KaiouBackground } from './components/ui/KaiouBackground';
 
 type View = { kind: 'HUB' } | { kind: 'LOG' } | { kind: 'TEST' } | { kind: 'TRIAL' } | { kind: 'BOSS' } | { kind: 'MODULE'; id: ModuleId };
 
@@ -54,8 +54,8 @@ export default function App() {
       <MatrixRain />
       <AuroraRain />
       <SakuraRain />
-      <InfernoRain />
-      <TenkuuRain />
+      <SpeedWorldBackground />
+      <KaiouBackground />
 
       <div className="relative z-10 w-full h-full">
         <AnimatePresence mode="wait">

@@ -1,6 +1,7 @@
 /**
- * 桜吹雪テーマ専用の背景：漆黒の夜空に、桜の花びらが くるくる回りながら
- * 舞い散り、月がほのかに光る。theme === 'sakura' のときだけ描画する。
+ * 桜吹雪2テーマ専用の背景：漆黒の夜空に、ネオンの水色に光る桜の花びらが
+ * くるくる回りながら舞い散り、月がほのかに水色に光る。theme === 'sakura' のときだけ描画する。
+ * （内部IDは保存データとの互換のため 'sakura' のまま）
  */
 import React, { useEffect, useRef } from 'react';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -16,7 +17,7 @@ interface Petal {
   rot: number;       // 回転角
   rotSpeed: number;
   alpha: number;
-  hue: number;       // ピンクの濃さ（330〜350）
+  hue: number;       // 水色の色相（180〜196）
 }
 
 export const SakuraRain: React.FC = () => {
@@ -44,7 +45,7 @@ export const SakuraRain: React.FC = () => {
       rot: Math.random() * Math.PI * 2,
       rotSpeed: (Math.random() - 0.5) * 0.08,
       alpha: 0.5 + Math.random() * 0.5,
-      hue: 330 + Math.random() * 20,
+      hue: 180 + Math.random() * 16,
     });
 
     const resize = () => {
@@ -63,16 +64,27 @@ export const SakuraRain: React.FC = () => {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot);
+      // ネオンのにじみ（花びらの後ろに淡い光の円を加算で重ねる。shadowBlur より軽い）
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 2.4);
+      halo.addColorStop(0, `hsla(${p.hue}, 100%, 60%, ${p.alpha * 0.35})`);
+      halo.addColorStop(1, 'hsla(190, 100%, 50%, 0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(-p.size * 2.4, -p.size * 2.4, p.size * 4.8, p.size * 4.8);
+      ctx.globalCompositeOperation = 'source-over';
       // 花びら（先端が少しへこんだ楕円）を2つの弧で描く
       ctx.beginPath();
       ctx.moveTo(0, -p.size);
       ctx.quadraticCurveTo(p.size * 0.9, -p.size * 0.3, 0, p.size);
       ctx.quadraticCurveTo(-p.size * 0.9, -p.size * 0.3, 0, -p.size);
       const g = ctx.createLinearGradient(0, -p.size, 0, p.size);
-      g.addColorStop(0, `hsla(${p.hue}, 100%, 88%, ${p.alpha})`);
-      g.addColorStop(1, `hsla(${p.hue}, 90%, 72%, ${p.alpha * 0.85})`);
+      g.addColorStop(0, `hsla(${p.hue}, 100%, 90%, ${p.alpha})`);
+      g.addColorStop(1, `hsla(${p.hue}, 100%, 62%, ${p.alpha * 0.85})`);
       ctx.fillStyle = g;
       ctx.fill();
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = `hsla(${p.hue}, 100%, 75%, ${p.alpha * 0.9})`;
+      ctx.stroke();
       ctx.restore();
     };
 
@@ -82,23 +94,23 @@ export const SakuraRain: React.FC = () => {
       last = t;
 
       // 夜空
-      ctx.fillStyle = '#0d0416';
+      ctx.fillStyle = '#020a14';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // おぼろ月
       const mx = canvas.width * 0.82;
       const my = canvas.height * 0.16;
       const moon = ctx.createRadialGradient(mx, my, 0, mx, my, canvas.width * 0.18);
-      moon.addColorStop(0, 'rgba(255, 230, 240, 0.22)');
-      moon.addColorStop(0.25, 'rgba(255, 200, 225, 0.10)');
+      moon.addColorStop(0, 'rgba(220, 252, 255, 0.24)');
+      moon.addColorStop(0.25, 'rgba(90, 230, 255, 0.11)');
       moon.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = moon;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 地平の桜あかり
+      // 地平のネオンあかり
       const glow = ctx.createLinearGradient(0, canvas.height * 0.75, 0, canvas.height);
       glow.addColorStop(0, 'rgba(0,0,0,0)');
-      glow.addColorStop(1, 'rgba(255, 120, 175, 0.10)');
+      glow.addColorStop(1, 'rgba(40, 230, 255, 0.12)');
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 

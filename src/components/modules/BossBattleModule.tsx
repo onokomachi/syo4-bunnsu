@@ -1,6 +1,6 @@
 /**
- * ボス戦モード（インフェルノ限定・スペシャルステージ）。
- * 「天空神」（ゼウスのような雷の神）と、RPS風の2本立てシステムで戦う。
+ * ボス戦モード（スピードワールド2解放で挑めるスペシャルステージ）。
+ * 「海皇神」（海底神殿で三叉の槍と水竜をあやつる海の神）と、RPS風の2本立てシステムで戦う。
  * - ボスは プレイヤーの解答状況と無関係に、難易度ごとの一定間隔で行動ゲージが満ちて
  *   通常攻撃／タメ攻撃（必殺技・予告あり）を自動発動する。
  * - プレイヤーは問題に正解すると「アクションポイント」を獲得し、貯めた分をいつでも使って
@@ -12,7 +12,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
-  ChevronLeft, Cloud, Heart, Home, Lock, RotateCcw, Shield, ShieldCheck, Skull, Swords, Trophy, Zap,
+  ChevronLeft, Heart, Home, Lock, RotateCcw, Shield, ShieldCheck, Skull, Swords, Trophy, Waves, Zap,
 } from 'lucide-react';
 import { useProgressStore } from '../../store/progressStore';
 import { useBadgeRatio } from '../../lib/useBadgeRatio';
@@ -27,7 +27,7 @@ import { ErrorRound } from './ErrorHunterModule';
 
 interface Props { onExit: () => void; }
 
-const BOSS_NAME = '天空神';
+const BOSS_NAME = '海皇神';
 const VIDEO = {
   idle: '/videos/boss/idle.mp4',
   normal: '/videos/boss/attack-normal.mp4',
@@ -286,17 +286,17 @@ export const BossBattleModule: React.FC<Props> = ({ onExit }) => {
 
           <div className="text-center mt-4 mb-8">
             <div className="w-24 h-24 rounded-3xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center mx-auto mb-4 ring-2 ring-cyan-400/40">
-              <Cloud size={48} />
+              <Waves size={48} />
             </div>
             <h1 className="text-3xl font-black text-white mb-2">ボス戦：{BOSS_NAME}</h1>
-            <p className="text-white/70 font-bold">雷を まとった 天空神と、正解で貯めたポイントを つかって たたかおう！</p>
+            <p className="text-white/70 font-bold">三叉の槍と 水竜を あやつる 海皇神と、正解で貯めたポイントを つかって たたかおう！</p>
           </div>
 
           {!unlocked && (
             <div className="bg-white/5 border border-white/10 rounded-[28px] p-8 text-center">
               <Lock size={40} className="mx-auto mb-4 text-white/50" />
               <p className="text-white font-black text-lg mb-1">まだ 挑戦できません</p>
-              <p className="text-white/60 font-bold text-sm">テーマ「インフェルノ」を 解放すると 挑戦できます（{req}）</p>
+              <p className="text-white/60 font-bold text-sm">テーマ「スピードワールド2」を 解放すると 挑戦できます（{req}）</p>
               <p className="text-white/40 font-bold text-xs mt-2">いまの バッジ獲得率：{Math.round(ratio * 100)}%</p>
             </div>
           )}
@@ -425,7 +425,7 @@ export const BossBattleModule: React.FC<Props> = ({ onExit }) => {
               </button>
               <span className="text-white/80 font-black text-xs">{config.label}　{questionsExhausted ? 'もんだい終了' : `${qIndex + 1}/${questions.length}問`}</span>
             </div>
-            <HpBar label={BOSS_NAME} hp={bossHp} max={config.hp} color="bg-gradient-to-r from-cyan-400 to-indigo-500" icon={<Cloud size={16} />} />
+            <HpBar label={BOSS_NAME} hp={bossHp} max={config.hp} color="bg-gradient-to-r from-cyan-400 to-indigo-500" icon={<Waves size={16} />} />
             <div>
               <div className="h-1.5 rounded-full bg-black/40 overflow-hidden">
                 <div
@@ -450,7 +450,7 @@ export const BossBattleModule: React.FC<Props> = ({ onExit }) => {
                   }`}
                 >
                   <Zap size={16} />
-                  {bossTelegraph === 'charge' ? '天空神が 必殺技を ためている！ ガードで そなえよう！' : '天空神が 力を ためている…'}
+                  {bossTelegraph === 'charge' ? '海皇神が 必殺技を ためている！ ガードで そなえよう！' : '海皇神が 力を ためている…'}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -514,7 +514,7 @@ export const BossBattleModule: React.FC<Props> = ({ onExit }) => {
             {questionsExhausted && (
               <div className="bg-surface/95 backdrop-blur-md rounded-[26px] shadow-2xl border border-line p-6 text-center shrink-0">
                 <p className="font-black text-content mb-1">もんだいは ぜんぶ といた！</p>
-                <p className="text-sm text-muted font-bold">のこった ポイントを つかって、天空神を たおそう！</p>
+                <p className="text-sm text-muted font-bold">のこった ポイントを つかって、海皇神を たおそう！</p>
               </div>
             )}
           </div>

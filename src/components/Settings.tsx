@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { motion } from 'motion/react';
-import { X, Sun, Flower2, Terminal, Flame, Sparkles, Cloud, Lock, Music, Music2 } from 'lucide-react';
+import { X, Sun, Flower2, Terminal, Gauge, Sparkles, Waves, Lock, Music, Music2 } from 'lucide-react';
 import { useSettingsStore, Theme, FontScale } from '../store/settingsStore';
 import { THEME_UNLOCK, isThemeUnlocked } from '../lib/themeUnlock';
 import { useBadgeRatio } from '../lib/useBadgeRatio';
@@ -18,9 +18,9 @@ const THEMES: { id: Theme; label: string; icon: React.ReactNode; swatch: string 
   { id: 'light', label: 'ノーマル', icon: <Sun size={22} />, swatch: 'bg-surface border-slate-300' },
   { id: 'dark', label: 'マトリックス', icon: <Terminal size={22} />, swatch: 'bg-black border-green-500' },
   { id: 'aurora', label: '極光', icon: <Sparkles size={22} />, swatch: 'bg-[#060c16] border-purple-400' },
-  { id: 'sakura', label: '桜吹雪', icon: <Flower2 size={22} />, swatch: 'bg-[#12051c] border-pink-400' },
-  { id: 'inferno', label: 'インフェルノ', icon: <Flame size={22} />, swatch: 'bg-[#0c0100] border-orange-500' },
-  { id: 'tenkuu', label: '天空神', icon: <Cloud size={22} />, swatch: 'bg-[#041022] border-yellow-300' },
+  { id: 'sakura', label: '桜吹雪2', icon: <Flower2 size={22} />, swatch: 'bg-[#020a14] border-cyan-300' },
+  { id: 'inferno', label: 'スピードワールド2', icon: <Gauge size={22} />, swatch: 'bg-[#03060f] border-pink-400' },
+  { id: 'tenkuu', label: '海皇神', icon: <Waves size={22} />, swatch: 'bg-[#010b18] border-sky-300' },
 ];
 
 const FONTS: { id: FontScale; label: string; sample: string }[] = [
