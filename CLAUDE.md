@@ -21,6 +21,8 @@
   練習は組み立てが基本で、同じ手順で2回まちがえたら「えらぶ」を足場に出す（熟達した項目では出さない）。本番テスト・実力の階段は組み立てだけ（`FractionRound` の `buildMode`）。ボス戦は「えらぶ」のまま。
   たし算は順番の入れかえも正解。`npm run verify` が、正解の書き方がすべて通ること・まちがいの書き方が通らず声かけが出ることを数える。
 - 設計と網羅性の対応表は `docs/DESIGN.md`。
+- **動画・画像などの大きな素材は、このアプリの `public/` に入れない**（2026-11-05）。共通置き場 `onokomachi/learning-media`（`https://learning-media-snowy.vercel.app`）に置き、`src/lib/media.ts` の `media('/videos/…')` で読む。
+  `public/` に入れると、直すたびのデプロイで同じ動画が丸ごと保存され、Vercel の Deployment Storage（10GB）を使いきる。置き場のファイルは上書きしない（新しい名前で足す）。
 
 ## 確かめ方
 - `npm run check`（ルール点検・型チェック・問題データの機械検査 `npm run verify`・ビルド）

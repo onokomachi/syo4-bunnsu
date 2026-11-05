@@ -14,6 +14,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ThemeVideo } from './ThemeVideo';
+import { media } from '../../lib/media';
 
 interface Bubble {
   x: number;
@@ -225,8 +226,8 @@ export const KaiouBackground: React.FC = () => {
   return (
     <div aria-hidden className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#010b18]">
       <ThemeVideo
-        src="/videos/theme/kaiou.mp4"
-        poster="/videos/theme/kaiou.jpg"
+        src={media('/videos/bunsuu4/theme/kaiou.mp4')}
+        poster={media('/videos/bunsuu4/theme/kaiou.jpg')}
         className="absolute inset-0 w-full h-full"
         style={{ filter: 'saturate(1.1)' }}
       />

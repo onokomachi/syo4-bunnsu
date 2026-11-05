@@ -24,14 +24,15 @@ import { TestProblem } from '../../lib/testConfig';
 import { playCorrect, playClear, playSoftTry } from '../../lib/sound';
 import { FractionRound } from './FractionRound';
 import { ErrorRound } from './ErrorHunterModule';
+import { media } from '../../lib/media';
 
 interface Props { onExit: () => void; }
 
 const BOSS_NAME = '海皇神';
 const VIDEO = {
-  idle: '/videos/boss/idle.mp4',
-  normal: '/videos/boss/attack-normal.mp4',
-  special: '/videos/boss/attack-special.mp4',
+  idle: media('/videos/bunsuu4/boss/idle.mp4'),
+  normal: media('/videos/bunsuu4/boss/attack-normal.mp4'),
+  special: media('/videos/bunsuu4/boss/attack-special.mp4'),
 };
 
 type Phase = 'INTRO' | 'BATTLE' | 'RESULT';

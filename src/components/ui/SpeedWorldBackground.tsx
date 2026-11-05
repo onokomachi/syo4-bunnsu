@@ -13,6 +13,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ThemeVideo } from './ThemeVideo';
+import { media } from '../../lib/media';
 
 interface Streak {
   angle: number;
@@ -194,8 +195,8 @@ export const SpeedWorldBackground: React.FC = () => {
   return (
     <div aria-hidden className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#03060f]">
       <ThemeVideo
-        src="/videos/theme/speed.mp4"
-        poster="/videos/theme/speed.jpg"
+        src={media('/videos/bunsuu4/theme/speed.mp4')}
+        poster={media('/videos/bunsuu4/theme/speed.jpg')}
         className="absolute inset-0 w-full h-full"
         style={{ filter: 'saturate(1.2) contrast(1.05)' }}
       />
