@@ -542,7 +542,6 @@ function checkError(id: string, e: ErrProb) {
   if (e.work.length < 1 || !e.explain || !e.fixHint) fail(id, '文言が空');
   if (e.reasons.length !== 4 || new Set(e.reasons).size !== 4) fail(id, '理由の選択肢が4つでない／重複');
   if (e.correctReason < 0 || e.correctReason > 3) fail(id, '正しい理由の番号が範囲外');
-  if (id === 'eh-judge' && !e.isCorrect) fail(id, 'eh-judge なのにまちがいのノート');
   if (id !== 'eh-judge' && e.isCorrect) fail(id, 'まちがいの型なのに正しいノート');
   checkAns(id, { skillId: id, text: '', steps: [], hints: [], explain: '', label: '', q: '', a: '' }, e.fix);
   const text = e.work.join(' ');
@@ -557,7 +556,7 @@ function checkError(id: string, e: ErrProb) {
     const x = a.n % a.d === 0 ? String(a.n / a.d) : a.n > a.d ? M(Math.floor(a.n / a.d), a.n % a.d, a.d) : F(a.n, a.d);
     forms.push(`答え ${x}`, `＝ ${x}`);
   }
-  if (id === 'eh-judge') {
+  if (e.isCorrect) {
     if (forms.length && !forms.some((f) => text.includes(f))) fail(id, `正しいノートに答えが無い ${text}`);
   } else if (a.kind !== 'choice') {
     if (forms.some((f) => text.includes(f))) fail(id, `まちがいのノートに正しい答えが書いてある ${text}`);
@@ -572,6 +571,26 @@ for (const t of ERROR_TYPES) {
     sigs.add(e.work.join('|') + e.fix.prompt);
   }
   ehVar[t.id] = sigs.size;
+}
+{
+  // eh-judge は 正しい・まちがいが 半々か（いつも正しいと「正しい」を押すだけで当たる）
+  let ok = 0; const n = 400;
+  for (let i = 0; i < n; i++) if (generateError('eh-judge').isCorrect) ok++;
+  console.log(`\neh-judge の 正しいノート: ${ok}/${n}`);
+  if (ok < n * 0.35 || ok > n * 0.65) fail('eh-judge', `正しいノートが ${ok}/${n}。半々に なっていない`);
+  // 理由の選択肢を 長さで 当てられないか（正しい理由が いちばん長い／短い が 45% 以下）
+  const len = (t: string) => t.replace(/\s+/g, '').length;
+  let all = 0, longest = 0, shortest = 0;
+  for (const t of ERROR_TYPES) for (let i = 0; i < 100; i++) {
+    const e = generateError(t.id);
+    const L = e.reasons.map(len); const c = L[e.correctReason]!;
+    all++;
+    if (L.every((l, j) => j === e.correctReason || l < c)) longest++;
+    if (L.every((l, j) => j === e.correctReason || l > c)) shortest++;
+  }
+  const lp = Math.round((longest / all) * 100), sp = Math.round((shortest / all) * 100);
+  console.log(`理由の選択肢: 正しい理由が いちばん長い ${lp}%・いちばん短い ${sp}%`);
+  if (lp > 45 || sp > 45) fail('eh-reason', `正しい理由が いちばん長い ${lp}%・いちばん短い ${sp}%（45% 以下にする）`);
 }
 
 /* ---------------- 変化の数 ---------------- */
